@@ -10,6 +10,9 @@ let globalJackpotConfig = {
   cooldown: 10             // 잭팟 쿨다운 (분)
 };
 
+/* 저장 시스템 */
+let saveTimers = {}; // 방별 저장 타이머
+
 // 방별 데이터 초기화 및 반환 함수
 function getRoomData(room) {
   if (!roomData[room]) {
@@ -34,7 +37,23 @@ let shopItems = {
 };
 
 /* 데이터 저장/로드 함수 */
-function saveRoomData(room) {
+function saveRoomData(room, priority = 'normal') {
+  if (priority === 'critical') {
+    // 중요 명령어는 즉시 저장
+    saveRoomDataImmediate(room);
+  } else {
+    // 일반 명령어는 1초 지연 저장 (기존 타이머 취소)
+    if (saveTimers[room]) {
+      clearTimeout(saveTimers[room]);
+    }
+    saveTimers[room] = setTimeout(function() {
+      saveRoomDataImmediate(room);
+      delete saveTimers[room];
+    }, 1000);
+  }
+}
+
+function saveRoomDataImmediate(room) {
   try {
     let data = roomData[room];
     if (data) {
@@ -46,7 +65,7 @@ function saveRoomData(room) {
       DataBase.setDataBase("room_" + room + "_lastJackpotTime", data.lastJackpotTime.toString());
     }
   } catch (e) {
-    // Log.error 대신 간단하게 처리
+    console.error("데이터 저장 오류:", e);
   }
 }
 
@@ -84,7 +103,7 @@ function loadRoomData(room) {
       data.lastJackpotTime = parseInt(lastJackpotTime);
     }
   } catch (e) {
-    // 에러 시 기본값 유지
+    console.error("데이터 로드 오류:", e);
   }
 }
 
@@ -93,7 +112,7 @@ function saveGlobalData() {
     DataBase.setDataBase("globalJackpotConfig", JSON.stringify(globalJackpotConfig));
     DataBase.setDataBase("roomDataList", JSON.stringify(Object.keys(roomData)));
   } catch (e) {
-    // Log.error 대신 간단하게 처리  
+    console.error("전역 데이터 저장 오류:", e);
   }
 }
 
@@ -112,7 +131,7 @@ function loadGlobalData() {
       }
     }
   } catch (e) {
-    // 에러 시 기본값 유지
+    console.error("전역 데이터 로드 오류:", e);
   }
 }
 
@@ -350,8 +369,10 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
     }
     
     // 데이터 저장 (잭팟 터졌거나, 레벨업했거나, 5번 채팅마다)
-    if (jackpotTriggered || levelUpTriggered || data.users[sender].chatCount % 5 === 0) {
-      saveRoomData(room);
+    if (jackpotTriggered || levelUpTriggered) {
+      saveRoomData(room, 'critical'); // 잭팟/레벨업은 즉시 저장
+    } else if (data.users[sender].chatCount % 5 === 0) {
+      saveRoomData(room, 'normal'); // 일반 채팅은 1초 지연 저장
     }
     
     return; // 일반 채팅은 여기서 종료
@@ -386,7 +407,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
       
       // 연속 출석 체크 (추후 확장 가능)
       replier.reply("✅ " + sender + "님 출석 완료!\n💎 경험치 +10, 포인트 +2 획득!");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 출석은 즉시 저장
     }
   }
   
@@ -495,7 +516,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
     data.users[sender].point -= item.price;
     data.users[sender].items.push(itemName);
     replier.reply("🛍️ '" + itemName + "' 구매 완료!\n💎 포인트 " + item.price + " 차감되었어요.");
-    saveRoomData(room);
+    saveRoomData(room, 'critical'); // 구매는 즉시 저장
   }
   
   // === 포인트 양도 ===
@@ -552,7 +573,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
                   "💎 " + amount + "P 양도됨\n\n" +
                   "💰 " + sender + " 잔액: " + data.users[sender].point + "P\n" +
                   "💰 " + targetUser + " 잔액: " + data.users[targetUser].point + "P");
-    saveRoomData(room);
+    saveRoomData(room, 'critical'); // 양도는 즉시 저장
   }
   
   // === 관리자 등록 ===
@@ -561,7 +582,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
     if (data.admins.length === 0) {
       data.admins.push(sender);
       replier.reply("👑 " + sender + "님이 " + room + " 방의 첫 번째 관리자로 등록되었습니다!");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 관리자 등록은 즉시 저장
     } else {
       replier.reply("❌ 이미 관리자가 존재합니다. 기존 관리자만 새로운 관리자를 추가할 수 있어요!");
     }
@@ -602,7 +623,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
       
       data.admins.push(targetUser);
       replier.reply("👑 " + targetUser + "님이 " + room + " 방 관리자로 추가되었습니다!");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 관리자 추가는 즉시 저장
     }
     
     // 관리자 해제
@@ -625,14 +646,14 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
       
       data.admins = data.admins.filter(admin => admin !== targetUser);
       replier.reply("👑 " + targetUser + "님의 " + room + " 방 관리자 권한이 해제되었습니다!");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 관리자 해제는 즉시 저장
     }
     
     // 전체 데이터 초기화
     else if (msg === "!관리자 전체초기화") {
       data.users = {};
       replier.reply("🔄 " + room + " 방 전체 유저 데이터가 초기화되었습니다.");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 전체 초기화는 즉시 저장
     }
     
     // 잭팟 설정 보기
@@ -738,7 +759,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
         chatCount: 0
       };
       replier.reply("🔄 " + sender + "님(관리자)의 " + room + " 방 데이터가 초기화되었습니다.");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 관리자 초기화는 즉시 저장
     }
     
     // 특정 사용자 데이터 초기화
@@ -770,14 +791,14 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
       }
       
       replier.reply("🔄 " + targetUser + "님의 " + room + " 방 데이터가 관리자에 의해 초기화되었습니다.");
-      saveRoomData(room);
+      saveRoomData(room, 'critical'); // 사용자 초기화는 즉시 저장
     }
     
      // MVP 타이머 리셋
      else if (msg === "!mvp타이머리셋") {
        clearAllMVPTimers(room);
        replier.reply("🔄 " + room + " 방 MVP 타이머가 리셋되었습니다.\n다음 메시지 때 새로 시작됩니다.");
-       saveRoomData(room);
+       saveRoomData(room, 'critical'); // 타이머 리셋은 즉시 저장
      }
      
      // 관리자 도움말
