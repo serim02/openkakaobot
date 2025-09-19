@@ -37,7 +37,10 @@ let shopItems = {
 };
 
 /* 데이터 저장/로드 함수 */
-function saveRoomData(room, priority = 'normal') {
+function saveRoomData(room, priority) {
+  // 기본값 설정 (구버전 JavaScript 호환)
+  if (priority === undefined) priority = 'normal';
+  
   if (priority === 'critical') {
     // 중요 명령어는 즉시 저장
     saveRoomDataImmediate(room);
