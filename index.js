@@ -655,7 +655,8 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
     // 전체 데이터 초기화
     else if (msg === "!관리자 전체초기화") {
       data.users = {};
-      replier.reply("🔄 " + room + " 방 전체 유저 데이터가 초기화되었습니다.");
+      data.dailyStats = {}; // 일일 통계도 함께 초기화
+      replier.reply("🔄 " + room + " 방 전체 유저 데이터가 초기화되었습니다.\n(유저 데이터 + 일일 통계 모두 초기화됨)");
       saveRoomData(room, 'critical'); // 전체 초기화는 즉시 저장
     }
     
@@ -752,16 +753,14 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
     
     // 관리자 자신의 데이터 초기화
     else if (msg === "!초기화") {
-      data.users[sender] = { 
-        exp: 0, 
-        level: 1, 
-        point: 0, 
-        lastCheck: "", 
-        items: [],
-        lastCommand: 0,
-        chatCount: 0
-      };
-      replier.reply("🔄 " + sender + "님(관리자)의 " + room + " 방 데이터가 초기화되었습니다.");
+      data.users[sender] = createUserData();
+      
+      // 일일 통계에서도 제거
+      if (data.dailyStats[sender]) {
+        delete data.dailyStats[sender];
+      }
+      
+      replier.reply("🔄 " + sender + "님(관리자)의 " + room + " 방 데이터가 초기화되었습니다.\n(유저 데이터 + 일일 통계 모두 초기화됨)");
       saveRoomData(room, 'critical'); // 관리자 초기화는 즉시 저장
     }
     
@@ -793,7 +792,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
         delete data.dailyStats[targetUser];
       }
       
-      replier.reply("🔄 " + targetUser + "님의 " + room + " 방 데이터가 관리자에 의해 초기화되었습니다.");
+      replier.reply("🔄 " + targetUser + "님의 " + room + " 방 데이터가 관리자에 의해 초기화되었습니다.\n(유저 데이터 + 일일 통계 모두 초기화됨)");
       saveRoomData(room, 'critical'); // 사용자 초기화는 즉시 저장
     }
     
